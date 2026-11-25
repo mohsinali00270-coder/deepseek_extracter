@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Book tools</title>
+  <link rel="stylesheet" href="book.css">
+  <script src="../lib/tesseract/tesseract.min.js"></script>
+  <script type="module" src="book.js"></script>
+</head>
+<body>
+  <!-- Compact progress bar shown while the panel is minimised -->
+  <div id="mini">
+    <span id="miniText">Idle</span>
+    <span class="grow"></span>
+    <button id="miniPause" title="Pause after this part">⏸</button>
+    <button id="miniExpand" class="primary" title="Open panel">Open</button>
+  </div>
+
+  <div id="app">
+    <header>
+      <div>
+        <h1>📚 Book tools</h1>
+        <div class="sub" id="conn">Connecting to DeepSeek…</div>
+      </div>
+      <nav class="tabs" role="tablist">
+        <button role="tab" data-tab="read" class="on">Read a book</button>
+        <button role="tab" data-tab="results">Results <span id="resCount" class="pill"></span></button>
+        <button role="tab" data-tab="chat">Chat → PDF book</button>
+      </nav>
+      <div class="hdr-btns">
+        <button id="minBtn" title="Minimise (keeps running)">▁</button>
+        <button id="closeBtn" title="Close">✕</button>
+      </div>
+    </header>
+
+    <main>
+      <!-- ============ READ A BOOK ============ -->
+      <section id="tab-read" class="tab on">
+        <div class="step">
+          <h2><span class="num">1</span> Upload the book</h2>
+          <div class="drop" id="drop">
+            <input type="file" id="file" multiple accept=".pdf,application/pdf,image/*,.txt,.md,.markdown,text/plain" hidden>
+            <div><b>Drop PDF, page photos/scans, or .txt/.md here</b> or <button id="pick" class="link">choose files</button></div>
+            <div class="small" id="fileList">Processed in your browser. Only the text you send goes to DeepSeek.</div>
+          </div>
+          <div class="row-opts">
+            <label>Book title <input id="title" type="text" placeholder="e.g. Physics Grade 10"></label>
+            <label>Pages <input id="range" type="text" placeholder="all, or 1-20, 35" size="12"></label>
+            <label>OCR language
+              <select id="lang">
+                <option value="eng">English (built in)</option>
+                <option value="urd">Urdu</option>
+                <option value="eng+urd">English + Urdu</option>
+                <option value="ara">Arabic</option>
+                <option value="hin">Hindi</option>
+                <option value="chi_sim">Chinese (simplified)</option>
+                <option value="fra">French</option>
+                <option value="deu">German</option>
+                <option value="spa">Spanish</option>
+                <option value="por">Portuguese</option>
+                <option value="rus">Russian</option>
+                <option value="tur">Turkish</option>
+                <option value="custom">Other code…</option>
+              </select>
+            </label>
+            <label class="chk"><input id="forceOcr" type="checkbox"> Force OCR on every page</label>
+            <button id="extractBtn" class="primary" disabled>Extract text</button>
+          </div>
+          <div class="progress" id="exProg" hidden><div class="bar"><i id="exBar"></i></div><span id="exText"></span><button id="exStop" class="small-btn">Stop</button></div>
+          <div class="note" id="langNote" hidden>Language data for this OCR language is downloaded once from the jsDelivr CDN (data only) and then cached.</div>
+        </div>
+
+        <div class="step" id="pagesStep" hidden>
+          <h2><span class="num">2</span> Check the text <span class="sub" id="pagesSum"></span></h2>
+          <p class="hint">Fix OCR mistakes or clear pages you don't need (index, blank pages). Low-confidence OCR pages are marked.</p>
+          <div class="pages" id="pages"></div>
+        </div>
+
+        <div class="step" id="chunkStep" hidden>
+          <h2><span class="num">3</span> Split into parts and choose the task</h2>
+          <div class="row-opts">
+            <label>Max characters per part <input id="maxChars" type="number" min="2000" max="60000" step="1000" value="12000"></label>
+            <label>Overlap <input id="overlap" type="number" min="0" max="3000" step="100" value="0"></label>
+            <label class="chk"><input id="markers" type="checkbox" checked> Page markers</label>
+            <span class="sum" id="chunkSum"></span>
+          </div>
+          <div class="row-opts">
+            <label>Task
+              <select id="task"></select>
+            </label>
+            <label id="langWrap" hidden>Translate into <input id="tLang" type="text" value="English" size="12"></label>
+            <button id="resetTpl" class="small-btn" title="Restore the built-in prompt for this task">Reset prompt</button>
+          </div>
+          <label class="block">Prompt for each part <span class="hint">placeholders: {title} {part} {total} {pages} {text}</span>
+            <textarea id="prompt" rows="9" spellcheck="false"></textarea>
+          </label>
+          <label class="chk"><input id="finalOn" type="checkbox"> After all parts, send a final combining prompt</label>
+          <label class="block" id="finalWrap" hidden>Final prompt <span class="hint">{answers} = all part answers</span>
+            <textarea id="finalPrompt" rows="4" spellcheck="false"></textarea>
+          </label>
+        </div>
+
+        <div class="step" id="runStep" hidden>
+          <h2><span class="num">4</span> Send to DeepSeek</h2>
+          <div class="row-opts">
+            <label>Wait until answer is still for <input id="settle" type="number" min="2" max="60" value="5"> s</label>
+            <label>Pause between parts <input id="delay" type="number" min="0" max="120" value="3"> s</label>
+            <label>Timeout per part <input id="timeout" type="number" min="1" max="60" value="10"> min</label>
+          </div>
+          <div class="run-btns">
+            <button id="startBtn" class="primary">▶ Start auto-run</button>
+            <button id="pauseBtn" disabled>⏸ Pause</button>
+            <button id="nextBtn" title="Put the next unfinished part into the chat box; you press send">Insert next part (manual)</button>
+            <button id="captureBtn" title="Save DeepSeek's latest answer as the result of the part you inserted">Capture last answer</button>
+            <button id="clearJob" class="danger">Clear job</button>
+          </div>
+          <p class="hint">Tip: if DeepSeek says the chat is too long, press <b>Pause</b>, open a <b>New chat</b> in DeepSeek, then <b>Start</b> again: it continues from the next unfinished part. Keep the DeepSeek tab visible while it runs, because Chrome slows down background tabs.</p>
+          <div class="parts" id="parts"></div>
+        </div>
+      </section>
+
+      <!-- ============ RESULTS ============ -->
+      <section id="tab-results" class="tab">
+        <div class="step">
+          <h2>Answers</h2>
+          <div class="row-opts">
+            <label>Book title <input id="rTitle" type="text"></label>
+            <label>Subtitle / author <input id="rSub" type="text" placeholder="optional"></label>
+            <label class="chk"><input id="rOrig" type="checkbox"> Include original text</label>
+            <label class="chk"><input id="rFinalFirst" type="checkbox" checked> Final answer first</label>
+          </div>
+          <div class="row-opts" data-bookopts="r"></div>
+          <div class="run-btns">
+            <button id="rPdf" class="primary">🖨 Save as PDF book</button>
+            <button id="rHtml">Download .html</button>
+            <button id="rMd">Download .md</button>
+            <button id="rCopy">Copy all text</button>
+          </div>
+          <div id="results" class="results"><div class="empty">No answers yet. Run a book in “Read a book”.</div></div>
+        </div>
+      </section>
+
+      <!-- ============ CHAT → BOOK ============ -->
+      <section id="tab-chat" class="tab">
+        <div class="step">
+          <h2>Make a PDF book from this chat</h2>
+          <div class="row-opts">
+            <button id="loadChat" class="primary">Load answers from this chat</button>
+            <span class="sum" id="chatSum"></span>
+          </div>
+          <div class="row-opts">
+            <label>Book title <input id="cTitle" type="text"></label>
+            <label>Subtitle / author <input id="cSub" type="text" placeholder="optional"></label>
+          </div>
+          <div class="row-opts" data-bookopts="c"></div>
+          <div class="chat-list" id="chatList"><div class="empty">Press “Load answers from this chat”.</div></div>
+          <div class="run-btns">
+            <button id="cAll">Select all</button>
+            <button id="cNone">Select none</button>
+            <span class="grow"></span>
+            <button id="cMd">Download .md</button>
+            <button id="cHtml">Download .html</button>
+            <button id="cPdf" class="primary">🖨 Save as PDF book</button>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <template id="bookOpts">
+    <label>Page size <select class="bo-size"><option value="a4">A4</option><option value="letter">Letter</option></select></label>
+    <label>Font size <input class="bo-font" type="number" min="8" max="16" step="0.5" value="11"> pt</label>
+    <label class="chk"><input class="bo-toc" type="checkbox" checked> Table of contents</label>
+  </template>
+</body>
+</html>
